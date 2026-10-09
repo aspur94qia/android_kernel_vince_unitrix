@@ -44,7 +44,7 @@ jobs:
           set -eux
           cp initramfs-tools-halium/out/initrd.img-touch-arm64 new-ramdisk.img
           ls -lh kernel-new/kernel new-ramdisk.img
-          python3 - <<'PY'
+          python3 <<'PY'
           import shlex,subprocess
           a=shlex.split(open('stock/args.txt').read())
           out=[];i=0
