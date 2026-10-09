@@ -1,0 +1,99 @@
+name: v4
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pilih image Droidian
+        run: |
+          for T in trixie current next; do
+            I=quay.io/droidian/build-essential:$T-amd64
+            echo "== coba $I"
+            docker pull -q $I || continue
+            if docker run --rm $I bash -c 'apt-get update >/dev/null 2>&1; apt-get install -y -d linux-packaging-snippets >/dev/null 2>&1'; then
+              echo "$I" > $RUNNER_TEMP/img
+              echo "PAKAI $I"
+              break
+            fi
+          done
+          test -s $RUNNER_TEMP/img
+      - name: Config Halium
+        run: |
+          D=arch/arm64/configs/vince-perf_defconfig
+          test -f $D
+          echo >> $D
+          setc(){ sed -i -E "/^(# )?$1[= ]/d" $D; echo "$2" >> $D; }
+          for c in DEVTMPFS VT NAMESPACES SYSVIPC PID_NS IPC_NS UTS_NS USER_NS MODULES \
+                   DEVPTS_MULTIPLE_INSTANCES USB_CONFIGFS_RNDIS USB_CONFIGFS_MASS_STORAGE \
+                   USB_CONFIGFS_RMNET_BAM OVERLAY_FS SQUASHFS VETH CGROUP_DEVICE MEMCG \
+                   FHANDLE POSIX_MQUEUE MACVLAN PSTORE PSTORE_CONSOLE PSTORE_RAM; do
+            setc CONFIG_$c "CONFIG_$c=y"
+          done
+          setc CONFIG_ANDROID_PARANOID_NETWORK "# CONFIG_ANDROID_PARANOID_NETWORK is not set"
+          tail -n 40 $D
+      - name: Build paket kernel Droidian
+        run: |
+          cat > $RUNNER_TEMP/b.sh <<'SH'
+          set -ex
+          apt-get update || true
+          apt-get install -y linux-packaging-snippets
+          cd /buildd/sources
+          git config --global --add safe.directory /buildd/sources
+          mkdir -p debian/source
+          cp -v /usr/share/linux-packaging-snippets/kernel-info.mk.example debian/kernel-info.mk
+          echo 13 > debian/compat
+          echo "3.0 (native)" > debian/source/format
+          printf '#!/usr/bin/make -f\n\ninclude /usr/share/linux-packaging-snippets/kernel-snippet.mk\n\n%%:\n\tdh $@\n' > debian/rules
+          chmod +x debian/rules
+          echo "=== CONTOH BAWAAN"; cat debian/kernel-info.mk
+          V=$(awk '/^VERSION/{a=$3}/^PATCHLEVEL/{b=$3}/^SUBLEVEL/{c=$3}END{print a"."b"."c}' Makefile)
+          echo "kernel $V"
+          setv(){ f=debian/kernel-info.mk
+            if grep -qE "^$1 *[:?]?=" $f; then sed -i -E "s|^$1 *[:?]?=.*|$1 = $2|" $f; else echo "$1 = $2" >> $f; fi; }
+          setv KERNEL_BASE_VERSION "$V"
+          setv KERNEL_DEFCONFIG vince-perf_defconfig
+          setv KERNEL_BOOTIMAGE_VERSION 0
+          setv KERNEL_BOOTIMAGE_PAGE_SIZE 2048
+          setv KERNEL_BOOTIMAGE_BASE_OFFSET 0x80000000
+          setv KERNEL_BOOTIMAGE_KERNEL_OFFSET 0x00008000
+          setv KERNEL_BOOTIMAGE_INITRAMFS_OFFSET 0x01000000
+          setv KERNEL_BOOTIMAGE_SECONDIMAGE_OFFSET 0x00f00000
+          setv KERNEL_BOOTIMAGE_TAGS_OFFSET 0x00000100
+          setv KERNEL_BOOTIMAGE_CMDLINE "androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 lpm_levels.sleep_disabled=1 androidboot.bootdevice=7824900.sdhci androidboot.selinux=permissive console=tty0 droidian.lvm.prefer"
+          setv BUILD_CC aarch64-linux-android-gcc-4.9
+          setv DEB_BUILD_FOR arm64
+          setv KERNEL_ARCH arm64
+          setv FLASH_ENABLED 0
+          echo "=== FINAL"; cat debian/kernel-info.mk
+          rm -f debian/control
+          debian/rules debian/control
+          RELENG_HOST_ARCH="arm64" releng-build-package
+          SH
+          mkdir -p pkgs
+          docker run --rm -v $PWD/pkgs:/buildd -v $PWD:/buildd/sources -v $RUNNER_TEMP/b.sh:/b.sh $(cat $RUNNER_TEMP/img) bash /b.sh
+      - name: Kumpulkan hasil
+        if: always()
+        run: |
+          sudo chown -R $USER pkgs . 2>/dev/null || true
+          mkdir -p rel
+          cp pkgs/*.deb rel/ 2>/dev/null || true
+          find . -name boot.img -not -path './rel/*' -exec cp {} rel/ \; 2>/dev/null || true
+          ls -lh rel
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: droidian-kernel
+          path: rel/*
+          if-no-files-found: warn
+      - name: Release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls rel/* >/dev/null 2>&1 || { echo "tidak ada hasil"; exit 0; }
+          gh release create "dk-${{ github.run_number }}" rel/* --title "dk-${{ github.run_number }}" --notes "droidian kernel package"
