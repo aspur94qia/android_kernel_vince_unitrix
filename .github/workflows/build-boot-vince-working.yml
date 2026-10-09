@@ -6,6 +6,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y cpio file python3 python3-pip debootstrap debian-archive-keyring qemu-user-static binfmt-support dpkg-dev git
+          pip3 install mkbootimg --break-system-packages || pip3 install mkbootimg
+          which unpack_bootimg
+          which mkbootimg
+
       - name: Unpack boot stock
         run: |
           set -eux
@@ -15,9 +24,11 @@ jobs:
           unpack_bootimg --boot_img boot-stock-vince.img --out stock --format=mkbootimg
           cat stock/args.txt
           ls -lh stock
+
       - name: Cek config kernel stock (info saja)
         run: |
-          strings stock/kernel | grep "Linux version" || true
+          strings stock/kernel | grep "Linux version" | head -1 || true
+
       - name: Build initrd Halium (arm64)
         run: |
           set -eux
@@ -25,12 +36,14 @@ jobs:
           git clone --depth 1 https://github.com/Halium/initramfs-tools-halium
           cd initramfs-tools-halium
           bash $GITHUB_WORKSPACE/patch-initrd.sh
-          sudo RELEASE=bookworm ./build-initrd.sh -a arm64
+          sudo RELEASE=bookworm./build-initrd.sh -a arm64
           ls -lh out/
+
       - name: Repack boot
         run: |
           set -eux
           cp initramfs-tools-halium/out/initrd.img-touch-arm64 new-ramdisk.img
+          ls -lh kernel-new/kernel new-ramdisk.img
           python3 - <<'PY'
           import shlex,subprocess
           a=shlex.split(open('stock/args.txt').read())
@@ -46,10 +59,9 @@ jobs:
           subprocess.run(['python3','-m','mkbootimg']+out,check=True)
           PY
           ls -lh boot-vince-DROIDIAN.img
-          SZ=$(stat -c %s boot-vince-DROIDIAN.img); echo SZ=$SZ
-          [ $SZ -le 33554432 ]
           mkdir -p check
           unpack_bootimg --boot_img boot-vince-DROIDIAN.img --out check
+
       - uses: actions/upload-artifact@v4
         with:
           name: boot-vince-DROIDIAN

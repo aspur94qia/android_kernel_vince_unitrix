@@ -1,49 +1,69 @@
-name: Build Vince Hemat
-on: [workflow_dispatch]
+name: build
+on:
+  workflow_dispatch:
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      - uses: actions/cache@v4
-        id: tc-cache
-        with:
-          path: ~/tc
-          key: tc-clang-r510928
-      - name: Setup TC
-        if: steps.tc-cache.outputs.cache-hit != 'true'
+
+      - name: Install tools
         run: |
-          mkdir -p ~/tc && cd ~/tc
-          wget -q https://android.googlesource.[STRIPPED 84 bytes].tar.gz -O clang.tar.gz
-          mkdir clang && tar -xzf clang.tar.gz -C clang && rm clang.tar.gz
-          git clone --depth=1 https://android.googlesource.[STRIPPED 68 bytes].9 aarch64
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 arm32
-      - name: Build
+          sudo apt-get update -y
+          sudo apt-get install -y cpio file python3 python3-pip debootstrap debian-archive-keyring qemu-user-static binfmt-support dpkg-dev git
+          pip3 install mkbootimg --break-system-packages || pip3 install mkbootimg
+          which unpack_bootimg
+          which mkbootimg
+          unpack_bootimg --help | head -5
+
+      - name: Unpack boot stock
         run: |
-          echo "$HOME/tc/clang/bin" >> $GITHUB_PATH
-          echo "$HOME/tc/aarch64/bin" >> $GITHUB_PATH
-          echo "$HOME/tc/arm32/bin" >> $GITHUB_PATH
-          export PATH=$HOME/tc/clang/bin:$HOME/tc/aarch64/bin:$HOME/tc/arm32/bin:$PATH
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-android-
-          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
-          export CC=clang
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          sed -i 's/prepare-compiler-check:/_prepare-compiler-check:/g' Makefile || true
-          make O=out ARCH=arm64 vince_defconfig
-          echo "CONFIG_AUDIT=y" >> out/.config
-          echo "CONFIG_AUDIT_GENERIC=y" >> out/.config
-          echo "CONFIG_SECURITY=y" >> out/.config
-          echo "CONFIG_SECURITYFS=y" >> out/.config
-          echo "CONFIG_SECURITY_APPARMOR=y" >> out/.config
-          echo "CONFIG_SECURITY_APPARMOR_BOOTPARAM_VALUE=1" >> out/.config
-          echo "CONFIG_ANDROID_BINDERFS=y" >> out/.config
-          make O=out ARCH=arm64 olddefconfig
-          make -j2 O=out ARCH=arm64 CC=clang
+          set -eux
+          test -f boot-stock-vince.img
+          file boot-stock-vince.img
+          mkdir -p stock
+          unpack_bootimg --boot_img boot-stock-vince.img --out stock --format=mkbootimg
+          cat stock/args.txt
+          ls -lh stock
+
+      - name: Cek config kernel stock (info saja)
+        run: |
+          strings stock/kernel | grep "Linux version" | head -1 || true
+
+      - name: Build initrd Halium (arm64)
+        run: |
+          set -eux
+          rm -rf initramfs-tools-halium
+          git clone --depth 1 https://github.com/Halium/initramfs-tools-halium
+          cd initramfs-tools-halium
+          bash $GITHUB_WORKSPACE/patch-initrd.sh
+          sudo RELEASE=bookworm./build-initrd.sh -a arm64
+          ls -lh out/
+
+      - name: Repack boot
+        run: |
+          set -eux
+          cp initramfs-tools-halium/out/initrd.img-touch-arm64 new-ramdisk.img
+          ls -lh kernel-new/kernel new-ramdisk.img
+          python3 - <<'PY'
+          import shlex,subprocess
+          a=shlex.split(open('stock/args.txt').read())
+          out=[];i=0
+          while i<len(a):
+            if a[i]=='--kernel': out+=['--kernel','kernel-new/kernel'];i+=2
+            elif a[i]=='--ramdisk': out+=['--ramdisk','new-ramdisk.img'];i+=2
+            elif a[i]=='--cmdline': out+=['--cmdline',a[i+1]+' androidboot.selinux=permissive'];i+=2
+            elif a[i]=='--out': i+=2
+            else: out.append(a[i]);i+=1
+          out+=['-o','boot-vince-DROIDIAN.img']
+          print(out)
+          subprocess.run(['python3','-m','mkbootimg']+out,check=True)
+          PY
+          ls -lh boot-vince-DROIDIAN.img
+          mkdir -p check
+          unpack_bootimg --boot_img boot-vince-DROIDIAN.img --out check
+
       - uses: actions/upload-artifact@v4
         with:
-          name: vince-Image
-          path: out/arch/arm64/boot/Image.gz-dtb
-          retention-days: 1
+          name: boot-vince-DROIDIAN
+          path: boot-vince-DROIDIAN.img
