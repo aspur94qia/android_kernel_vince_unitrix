@@ -5,36 +5,29 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
     steps:
+      - name: Install git
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git
       - uses: actions/checkout@v4
       - name: Install deps
-        run: sudo apt update && sudo apt install -y bc bison flex libssl-dev libelf-dev mkbootimg gcc-aarch64-linux-gnu
-      - name: Build kernel 4.9
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y bc bison flex libssl-dev libelf-dev mkbootimg gcc-aarch64-linux-gnu wget zip
+      - name: Build kernel
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           make vince_defconfig
           make -j$(nproc) Image.gz-dtb dtbo.img || make -j$(nproc) Image.gz-dtb
-          ls -lh arch/arm64/boot/
       - name: Build boot 28MB REAL
         run: |
           wget -q https://github.[STRIPPED 80 bytes].img -O ramdisk.img
           mkbootimg --kernel arch/arm64/boot/Image.gz-dtb --ramdisk ramdisk.img --cmdline "androidboot.selinux=permissive" --base 0x80000000 --pagesize 2048 --kernel_offset 0x00008000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100 -o boot-vince-28MB-REAL.img
-          ls -lh *.img
       - uses: actions/upload-artifact@v4
         with:
           name: BOOT-VINCE-28MB-REAL
           path: boot-vince-28MB-REAL.img
-      - name: Build 4 files pengatur jalur
-        run: |
-          mkdir -p s/usr/lib/droidian/device s/etc/udev/rules.d s/var/lib/lxc/android/rootfs
-          echo 'vince,adreno506' > s/usr/lib/droidian/device/mesa-quirks
-          echo 'SUBSYSTEM=="input"' > s/etc/udev/rules.d/70-vince.rules
-          echo '/dev/block/bootdevice/by-name/system /system ext4 ro wait' > s/var/lib/lxc/android/rootfs/fstab.qcom
-          echo '/dev/block/bootdevice/by-name/vendor /vendor ext4 ro wait' >> s/var/lib/lxc/android/rootfs/fstab.qcom
-          cd s && zip -r ../adaptation-4-files.zip ./*
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ADAPTATION-4-FILES
-          path: adaptation-4-files.zip
