@@ -14,7 +14,6 @@ jobs:
           pip3 install mkbootimg --break-system-packages || pip3 install mkbootimg
           which unpack_bootimg
           which mkbootimg
-          unpack_bootimg --help | head -5
 
       - name: Unpack boot stock
         run: |
