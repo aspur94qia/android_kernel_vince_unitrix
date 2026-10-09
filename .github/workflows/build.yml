@@ -11,14 +11,14 @@ jobs:
           sudo apt-get install -y clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi bc bison flex libssl-dev libelf-dev python3
       - name: Config
         run: |
-          export ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          export ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
           make $ARGS vince-perf_defconfig
           cat halium.fragment >> out/.config
           make $ARGS olddefconfig
           grep -E "CONFIG_(SYSVIPC|UTS_NS|PID_NS|USER_NS|IPC_NS|DEVTMPFS|OVERLAY_FS|SQUASHFS|VETH|AUTOFS4_FS)=" out/.config
       - name: Build
         run: |
-          export ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          export ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
           make $ARGS -j$(nproc)
       - uses: actions/upload-artifact@v4
         with:
