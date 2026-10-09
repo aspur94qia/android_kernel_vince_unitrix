@@ -25,11 +25,11 @@ jobs:
           cat stock/args.txt
           ls -lh stock
 
-      - name: Cek config kernel stock (info saja)
+      - name: Cek config kernel stock
         run: |
           strings stock/kernel | grep "Linux version" | head -1 || true
 
-      - name: Build initrd Halium (arm64)
+      - name: Build initrd Halium
         run: |
           set -eux
           rm -rf initramfs-tools-halium
@@ -44,7 +44,7 @@ jobs:
           set -eux
           cp initramfs-tools-halium/out/initrd.img-touch-arm64 new-ramdisk.img
           ls -lh kernel-new/kernel new-ramdisk.img
-          python3 - <<'PY'
+          python3 <<'PY'
           import shlex,subprocess
           a=shlex.split(open('stock/args.txt').read())
           out=[];i=0
