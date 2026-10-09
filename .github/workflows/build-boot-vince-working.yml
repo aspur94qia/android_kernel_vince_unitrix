@@ -1,4 +1,4 @@
-name: build-boot-vince-working
+name: build
 on:
   workflow_dispatch:
 jobs:
@@ -6,61 +6,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install tools
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y mkbootimg cpio file python3 debootstrap debian-archive-keyring qemu-user-static binfmt-support dpkg-dev git
       - name: Unpack boot stock
         run: |
           set -eux
-          ls -lh boot-stock-vince.img
+          test -f boot-stock-vince.img
+          file boot-stock-vince.img
           mkdir -p stock
-          unpack_bootimg --boot_img boot-stock-vince.img --out stock --format=mkbootimg > stock/args.txt
+          unpack_bootimg --boot_img boot-stock-vince.img --out stock --format=mkbootimg
           cat stock/args.txt
+          ls -lh stock
+      - name: Cek config kernel stock (info saja)
+        run: |
+          strings stock/kernel | grep "Linux version" || true
       - name: Build initrd Halium (arm64)
         run: |
           set -eux
+          rm -rf initramfs-tools-halium
           git clone --depth 1 https://github.com/Halium/initramfs-tools-halium
-
-          # Kalau patch-initrd.sh belum ada di repo, bikin otomatis
-          if [! -f "$GITHUB_WORKSPACE/patch-initrd.sh" ]; then
-            echo "patch-initrd.sh belum ada, bikin yang default buat vince..."
-            cat >"$GITHUB_WORKSPACE/patch-initrd.sh" <<'PATCH'
-          #!/bin/bash
-          set -eux
-          echo "Patch default vince"
-          HOOK=$(find initramfs-tools-halium -path "*hooks/halium" -type f | head -1)
-          echo "HOOK=$HOOK"
-          cat "$HOOK" || true
-          # Tambahan patch vince disini kalau perlu
-          PATCH
-            chmod +x "$GITHUB_WORKSPACE/patch-initrd.sh"
-          fi
-
           cd initramfs-tools-halium
-          bash "$GITHUB_WORKSPACE/patch-initrd.sh"
+          bash $GITHUB_WORKSPACE/patch-initrd.sh
           sudo RELEASE=bookworm ./build-initrd.sh -a arm64
-          ls -lh out
-      - name: Ambil mkbootimg AOSP
-        run: |
-          git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg-src || git clone --depth 1 https://github.com/aosp-mirror/platform_system_tools_mkbootimg mkbootimg-src
+          ls -lh out/
       - name: Repack boot
         run: |
           set -eux
           cp initramfs-tools-halium/out/initrd.img-touch-arm64 new-ramdisk.img
           python3 - <<'PY'
           import shlex,subprocess
-          a=shlex.split(open('stock/args.txt').read());out=[];i=0
+          a=shlex.split(open('stock/args.txt').read())
+          out=[];i=0
           while i<len(a):
-           if a[i]=='--kernel': out+=['--kernel','kernel-new/kernel'];i+=2
-           elif a[i]=='--ramdisk': out+=['--ramdisk','new-ramdisk.img'];i+=2
-           elif a[i]=='--cmdline': out+=['--cmdline',a[i+1]+' androidboot.selinux=permissive'];i+=2
-           else: out.append(a[i]);i+=1
+            if a[i]=='--kernel': out+=['--kernel','kernel-new/kernel'];i+=2
+            elif a[i]=='--ramdisk': out+=['--ramdisk','new-ramdisk.img'];i+=2
+            elif a[i]=='--cmdline': out+=['--cmdline',a[i+1]+' androidboot.selinux=permissive'];i+=2
+            elif a[i]=='--out': i+=2
+            else: out.append(a[i]);i+=1
           out+=['-o','boot-vince-DROIDIAN.img']
-          subprocess.run(['python3','mkbootimg-src/mkbootimg.py']+out,check=True)
+          print(out)
+          subprocess.run(['python3','-m','mkbootimg']+out,check=True)
           PY
           ls -lh boot-vince-DROIDIAN.img
+          SZ=$(stat -c %s boot-vince-DROIDIAN.img); echo SZ=$SZ
+          [ $SZ -le 33554432 ]
+          mkdir -p check
+          unpack_bootimg --boot_img boot-vince-DROIDIAN.img --out check
       - uses: actions/upload-artifact@v4
         with:
-          name: boot-vince-droidian-from-stock
+          name: boot-vince-DROIDIAN
           path: boot-vince-DROIDIAN.img
