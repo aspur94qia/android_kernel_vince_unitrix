@@ -1,68 +1,28 @@
-name: build
-on:
-  workflow_dispatch:
+name: build-kernel
+on: workflow_dispatch
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install tools
+      - name: Install deps
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y cpio file python3 python3-pip debootstrap debian-archive-keyring qemu-user-static binfmt-support dpkg-dev git
-          pip3 install mkbootimg --break-system-packages || pip3 install mkbootimg
-          which unpack_bootimg
-          which mkbootimg
-
-      - name: Unpack boot stock
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi bc bison flex libssl-dev libelf-dev python3
+      - name: Config
         run: |
-          set -eux
-          test -f boot-stock-vince.img
-          file boot-stock-vince.img
-          mkdir -p stock
-          unpack_bootimg --boot_img boot-stock-vince.img --out stock --format=mkbootimg
-          cat stock/args.txt
-          ls -lh stock
-
-      - name: Cek config kernel stock
+          export ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          make $ARGS vince-perf_defconfig
+          cat halium.fragment >> out/.config
+          make $ARGS olddefconfig
+          grep -E "CONFIG_(SYSVIPC|UTS_NS|PID_NS|USER_NS|IPC_NS|DEVTMPFS|OVERLAY_FS|SQUASHFS|VETH|AUTOFS4_FS)=" out/.config
+      - name: Build
         run: |
-          strings stock/kernel | grep "Linux version" | head -1 || true
-
-      - name: Build initrd Halium
-        run: |
-          set -eux
-          rm -rf initramfs-tools-halium
-          git clone --depth 1 https://github.com/Halium/initramfs-tools-halium
-          cd initramfs-tools-halium
-          bash $GITHUB_WORKSPACE/patch-initrd.sh
-          sudo RELEASE=bookworm./build-initrd.sh -a arm64
-          ls -lh out/
-
-      - name: Repack boot
-        run: |
-          set -eux
-          cp initramfs-tools-halium/out/initrd.img-touch-arm64 new-ramdisk.img
-          ls -lh kernel-new/kernel new-ramdisk.img
-          python3 <<'PY'
-          import shlex,subprocess
-          a=shlex.split(open('stock/args.txt').read())
-          out=[];i=0
-          while i<len(a):
-            if a[i]=='--kernel': out+=['--kernel','kernel-new/kernel'];i+=2
-            elif a[i]=='--ramdisk': out+=['--ramdisk','new-ramdisk.img'];i+=2
-            elif a[i]=='--cmdline': out+=['--cmdline',a[i+1]+' androidboot.selinux=permissive'];i+=2
-            elif a[i]=='--out': i+=2
-            else: out.append(a[i]);i+=1
-          out+=['-o','boot-vince-DROIDIAN.img']
-          print(out)
-          subprocess.run(['python3','-m','mkbootimg']+out,check=True)
-          PY
-          ls -lh boot-vince-DROIDIAN.img
-          mkdir -p check
-          unpack_bootimg --boot_img boot-vince-DROIDIAN.img --out check
-
+          export ARGS="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          make $ARGS -j$(nproc)
       - uses: actions/upload-artifact@v4
         with:
-          name: boot-vince-DROIDIAN
-          path: boot-vince-DROIDIAN.img
+          name: kernel
+          path: |
+            out/arch/arm64/boot/Image.gz-dtb
+            out/.config
