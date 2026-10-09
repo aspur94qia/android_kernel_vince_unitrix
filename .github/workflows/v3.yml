@@ -1,0 +1,88 @@
+name: v3
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Config Halium
+        run: |
+          cat >> arch/arm64/configs/vince-perf_defconfig <<'CFG'
+          CONFIG_DEVTMPFS=y
+          CONFIG_VT=y
+          CONFIG_NAMESPACES=y
+          CONFIG_SYSVIPC=y
+          CONFIG_PID_NS=y
+          CONFIG_IPC_NS=y
+          CONFIG_UTS_NS=y
+          CONFIG_USER_NS=y
+          CONFIG_MODULES=y
+          CONFIG_DEVPTS_MULTIPLE_INSTANCES=y
+          CONFIG_USB_CONFIGFS_RNDIS=y
+          CONFIG_USB_CONFIGFS_MASS_STORAGE=y
+          CONFIG_OVERLAY_FS=y
+          CONFIG_SQUASHFS=y
+          CONFIG_VETH=y
+          CONFIG_CGROUP_DEVICE=y
+          CONFIG_MEMCG=y
+          CONFIG_FHANDLE=y
+          CONFIG_POSIX_MQUEUE=y
+          CONFIG_MACVLAN=y
+          # CONFIG_ANDROID_PARANOID_NETWORK is not set
+          CFG
+          sed -i 's/^ *//' arch/arm64/configs/vince-perf_defconfig
+      - name: Build paket kernel Droidian
+        run: |
+          cat > $RUNNER_TEMP/b.sh <<'SH'
+          set -ex
+          apt-get update
+          apt-get install -y linux-packaging-snippets
+          cd /buildd/sources
+          git config --global --add safe.directory /buildd/sources
+          mkdir -p debian/source
+          cp -v /usr/share/linux-packaging-snippets/kernel-info.mk.example debian/kernel-info.mk
+          echo 13 > debian/compat
+          echo "3.0 (native)" > debian/source/format
+          printf '#!/usr/bin/make -f\n\ninclude /usr/share/linux-packaging-snippets/kernel-snippet.mk\n\n%%:\n\tdh $@\n' > debian/rules
+          chmod +x debian/rules
+          echo "=== CONTOH BAWAAN"
+          cat debian/kernel-info.mk
+          cat >> debian/kernel-info.mk <<'K'
+          KERNEL_BASE_VERSION = 4.9.296
+          KERNEL_DEFCONFIG = vince-perf_defconfig
+          KERNEL_BOOTIMAGE_VERSION = 0
+          KERNEL_BOOTIMAGE_PAGE_SIZE = 2048
+          KERNEL_BOOTIMAGE_BASE_OFFSET = 0x80000000
+          KERNEL_BOOTIMAGE_KERNEL_OFFSET = 0x00008000
+          KERNEL_BOOTIMAGE_INITRAMFS_OFFSET = 0x01000000
+          KERNEL_BOOTIMAGE_SECONDIMAGE_OFFSET = 0x00000000
+          KERNEL_BOOTIMAGE_TAGS_OFFSET = 0x00000100
+          KERNEL_BOOTIMAGE_CMDLINE = androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 lpm_levels.sleep_disabled=1 androidboot.bootdevice=7824900.sdhci androidboot.selinux=permissive console=tty0 droidian.lvm.prefer
+          BUILD_CC = aarch64-linux-android-gcc-4.9
+          DEB_BUILD_FOR = arm64
+          KERNEL_ARCH = arm64
+          FLASH_ENABLED = 0
+          K
+          sed -i 's/^ *//' debian/kernel-info.mk
+          echo "=== FINAL"
+          cat debian/kernel-info.mk
+          rm -f debian/control
+          debian/rules debian/control
+          RELENG_HOST_ARCH="arm64" releng-build-package
+          SH
+          mkdir -p pkgs
+          docker run --rm -v $PWD/pkgs:/buildd -v $PWD:/buildd/sources -v $RUNNER_TEMP/b.sh:/b.sh quay.io/droidian/build-essential:trixie-amd64 bash /b.sh
+      - name: Release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p rel
+          cp pkgs/*.deb rel/ || true
+          find . -name boot.img -exec cp {} rel/ \; || true
+          ls -l rel
+          gh release create "dk-${{ github.run_number }}" rel/* --title "dk-${{ github.run_number }}" --notes "droidian kernel package"
