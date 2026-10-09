@@ -45,7 +45,9 @@ jobs:
           A="O=out ARCH=arm64 CC=aclang HOSTCC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
           make $A vince-perf_defconfig
           cat halium.fragment >> out/.config
+          scripts/config --file out/.config -d CC_STACKPROTECTOR_STRONG -d CC_STACKPROTECTOR_REGULAR -e CC_STACKPROTECTOR_NONE
           make $A olddefconfig
+          grep -E "STACKPROTECTOR" out/.config
           grep -E "CONFIG_(SYSVIPC|USER_NS|PID_NS|DEVTMPFS|OVERLAY_FS|SQUASHFS|VETH)=" out/.config
           make $A -j$(nproc)
           ls -l out/arch/arm64/boot
