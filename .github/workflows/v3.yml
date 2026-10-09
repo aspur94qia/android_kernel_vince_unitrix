@@ -40,6 +40,11 @@ jobs:
           cat > $RUNNER_TEMP/b.sh <<'SH'
           set -ex
           printf '%s\n' 'Acquire::AllowInsecureRepositories "true";' 'Acquire::AllowDowngradeToInsecureRepositories "true";' 'APT::Get::AllowUnauthenticated "true";' > /etc/apt/apt.conf.d/99insecure
+          apt-get install -y --no-install-recommends gnupg dirmngr ca-certificates || true
+          for ks in hkps://keyserver.ubuntu.com hkps://keys.openpgp.org; do gpg --batch --keyserver $ks --recv-keys 5E775B2A27AB0C94 && break; done || true
+          gpg --batch --export 5E775B2A27AB0C94 > /etc/apt/trusted.gpg.d/droidian-extra.gpg || true
+          echo "=== KEYRING"; ls -l /etc/apt/trusted.gpg.d
+          echo "=== SOURCES"; grep -rn "droidian" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | cut -c1-200 | head -20
           ls /etc/apt/sources.list.d || true
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do [ -f "$f" ] && sed -i -E 's/^deb (\[[^]]*\] *)?/deb [trusted=yes] /' "$f"; done || true
           for f in /etc/apt/sources.list.d/*.sources; do [ -f "$f" ] && sed -i '/^Trusted:/d; s/^Types:.*/&\nTrusted: yes/' "$f"; done || true
