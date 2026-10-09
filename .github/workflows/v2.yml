@@ -38,9 +38,10 @@ jobs:
           CONFIG_MEMCG=y
           CONFIG_NETFILTER_XT_MATCH_OWNER=y
           CONFIG_EXT4_FS_POSIX_ACL=y
+          CONFIG_CC_STACKPROTECTOR_NONE=y
           FRAG
           sed -i 's/^ *//' halium.fragment
-          A="O=out ARCH=arm64 CC=clang LD=ld.lld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          A="O=out ARCH=arm64 CC="clang --target=aarch64-linux-gnu" HOSTCC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
           make $A $D
           cat halium.fragment >> out/.config
           make $A olddefconfig
