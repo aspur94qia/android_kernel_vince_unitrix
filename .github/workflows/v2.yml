@@ -13,10 +13,12 @@ jobs:
           sudo apt-get install -y clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi bc bison flex libssl-dev libelf-dev python3 git debootstrap qemu-user-static binfmt-support
       - name: Kernel
         run: |
-          set -x
-          ls arch/arm64/configs | grep -iE "vince|msm8953" || true
-          D=$(ls arch/arm64/configs | grep -iE '^vince' | head -1)
-          [ -n "$D" ] || { echo "defconfig vince tidak ada di branch ini"; exit 1; }
+          cat > aclang <<'W'
+          #!/bin/sh
+          exec clang --target=aarch64-linux-gnu -no-integrated-as -Wno-error "$@"
+          W
+          sed -i 's/^ *//' aclang
+          sudo install -m 755 aclang /usr/local/bin/aclang
           cat > halium.fragment <<'FRAG'
           CONFIG_SYSVIPC=y
           CONFIG_POSIX_MQUEUE=y
@@ -38,17 +40,13 @@ jobs:
           CONFIG_MEMCG=y
           CONFIG_NETFILTER_XT_MATCH_OWNER=y
           CONFIG_EXT4_FS_POSIX_ACL=y
-          CONFIG_CC_STACKPROTECTOR_NONE=y
           FRAG
           sed -i 's/^ *//' halium.fragment
-          printf '#!/bin/sh
-exec clang --target=aarch64-linux-gnu "$@"
-' | sudo tee /usr/local/bin/aclang >/dev/null; sudo chmod +x /usr/local/bin/aclang
           A="O=out ARCH=arm64 CC=aclang HOSTCC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
-          make $A $D
+          make $A vince-perf_defconfig
           cat halium.fragment >> out/.config
           make $A olddefconfig
-          grep -E "CONFIG_(SYSVIPC|UTS_NS|PID_NS|USER_NS|IPC_NS|DEVTMPFS|OVERLAY_FS|SQUASHFS|VETH)=" out/.config
+          grep -E "CONFIG_(SYSVIPC|USER_NS|PID_NS|DEVTMPFS|OVERLAY_FS|SQUASHFS|VETH)=" out/.config
           make $A -j$(nproc)
           ls -l out/arch/arm64/boot
       - name: Release kernel
@@ -56,28 +54,4 @@ exec clang --target=aarch64-linux-gnu "$@"
           GH_TOKEN: ${{ github.token }}
         run: |
           cp out/arch/arm64/boot/Image.gz-dtb kernel-Image.gz-dtb
-          gh release create "kernel-${{ github.run_number }}" kernel-Image.gz-dtb out/.config --title "kernel-${{ github.run_number }}" --notes "kernel 4.9 + config halium"
-      - name: Initrd Droidian
-        continue-on-error: true
-        run: |
-          set -eux
-          sudo debootstrap --arch=arm64 --variant=minbase bookworm rfs http://deb.debian.org/debian
-          sudo chroot rfs apt-get update
-          sudo chroot rfs apt-get install -y --no-install-recommends initramfs-tools git ca-certificates build-essential debhelper devscripts fakeroot
-          sudo chroot rfs git clone --depth 1 https://github.com/droidian/initramfs-tools-halium /src
-          sudo chroot rfs bash -c 'cd /src && apt-get build-dep -y . || true; dpkg-buildpackage -us -uc -b'
-          sudo chroot rfs bash -c 'dpkg -i /initramfs-tools-halium*.deb || apt-get install -y /initramfs-tools-halium*.deb'
-          sudo mkdir -p rfs/lib/modules/4.9.296-halium
-          sudo chroot rfs mkinitramfs -o /initrd.img 4.9.296-halium
-          sudo cp rfs/initrd.img ./initrd.img
-      - name: Rakit boot
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eux
-          git clone --depth 1 https://github.com/aosp-mirror/platform_system_tools_mkbootimg mk
-          CMD="androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 lpm_levels.sleep_disabled=1 androidboot.bootdevice=7824900.sdhci androidboot.selinux=permissive droidian.lvm.prefer"
-          python3 mk/mkbootimg.py --header_version 0 --kernel out/arch/arm64/boot/Image.gz-dtb --ramdisk initrd.img --pagesize 2048 --base 0x0 --kernel_offset 0x80008000 --ramdisk_offset 0x81000000 --second_offset 0x0 --tags_offset 0x80000100 --os_version 13.0.0 --os_patch_level 2025-12 --cmdline "$CMD" -o boot-droidian.img
-          ls -l boot-droidian.img
-          gh release create "boot-${{ github.run_number }}" boot-droidian.img --title "boot-${{ github.run_number }}" --notes "boot droidian"
+          gh release create "kernel-${{ github.run_number }}" kernel-Image.gz-dtb out/.config --title "kernel-${{ github.run_number }}" --notes "kernel 4.9 halium config"
