@@ -15,7 +15,7 @@ jobs:
         run: |
           cat > aclang <<'W'
           #!/bin/sh
-          exec clang --target=aarch64-linux-gnu -integrated-as -Wno-error "$@"
+          exec clang --target=aarch64-linux-gnu -fintegrated-as -Wno-error -Qunused-arguments "$@"
           W
           sed -i 's/^ *//' aclang
           sudo install -m 755 aclang /usr/local/bin/aclang
@@ -42,7 +42,9 @@ jobs:
           CONFIG_EXT4_FS_POSIX_ACL=y
           FRAG
           sed -i 's/^ *//' halium.fragment
-          A="O=out ARCH=arm64 CC=aclang AS=aclang HOSTCC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          A="O=out ARCH=arm64 CC=aclang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          grep -rn "no-integrated-as" Makefile arch/arm64/Makefile || true
+          sed -i "s/-no-integrated-as//g; s/-fno-integrated-as//g" Makefile arch/arm64/Makefile
           make $A vince-perf_defconfig
           cat halium.fragment >> out/.config
           scripts/config --file out/.config -d CC_STACKPROTECTOR_STRONG -d CC_STACKPROTECTOR_REGULAR -e CC_STACKPROTECTOR_NONE
