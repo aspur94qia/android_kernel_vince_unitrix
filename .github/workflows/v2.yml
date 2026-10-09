@@ -41,7 +41,10 @@ jobs:
           CONFIG_CC_STACKPROTECTOR_NONE=y
           FRAG
           sed -i 's/^ *//' halium.fragment
-          A="O=out ARCH=arm64 CC="clang --target=aarch64-linux-gnu" HOSTCC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          printf '#!/bin/sh
+exec clang --target=aarch64-linux-gnu "$@"
+' | sudo tee /usr/local/bin/aclang >/dev/null; sudo chmod +x /usr/local/bin/aclang
+          A="O=out ARCH=arm64 CC=aclang HOSTCC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
           make $A $D
           cat halium.fragment >> out/.config
           make $A olddefconfig
