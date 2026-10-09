@@ -15,7 +15,7 @@ jobs:
         run: |
           cat > aclang <<'W'
           #!/bin/sh
-          exec clang --target=aarch64-linux-gnu -no-integrated-as -Wno-error "$@"
+          exec clang --target=aarch64-linux-gnu -Wno-error "$@"
           W
           sed -i 's/^ *//' aclang
           sudo install -m 755 aclang /usr/local/bin/aclang
