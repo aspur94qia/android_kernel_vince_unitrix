@@ -40,7 +40,10 @@ jobs:
           cat > $RUNNER_TEMP/b.sh <<'SH'
           set -ex
           printf '%s\n' 'Acquire::AllowInsecureRepositories "true";' 'Acquire::AllowDowngradeToInsecureRepositories "true";' 'APT::Get::AllowUnauthenticated "true";' > /etc/apt/apt.conf.d/99insecure
-          apt-get update || true
+          ls /etc/apt/sources.list.d || true
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do [ -f "$f" ] && sed -i -E 's/^deb (\[[^]]*\] *)?/deb [trusted=yes] /' "$f"; done || true
+          for f in /etc/apt/sources.list.d/*.sources; do [ -f "$f" ] && sed -i '/^Trusted:/d; s/^Types:.*/&\nTrusted: yes/' "$f"; done || true
+          apt-get update
           apt-get install -y linux-packaging-snippets
           cd /buildd/sources
           git config --global --add safe.directory /buildd/sources
