@@ -46,7 +46,7 @@ jobs:
           git config --global --add safe.directory /buildd/sources
           mkdir -p debian/source
           cp -v /usr/share/linux-packaging-snippets/kernel-info.mk.example debian/kernel-info.mk
-          echo 13 > debian/compat
+          rm -f debian/compat
           echo "3.0 (native)" > debian/source/format
           printf '#!/usr/bin/make -f\n\ninclude /usr/share/linux-packaging-snippets/kernel-snippet.mk\n\n%%:\n\tdh $@\n' > debian/rules
           chmod +x debian/rules
