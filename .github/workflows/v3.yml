@@ -48,7 +48,12 @@ jobs:
           ls /etc/apt/sources.list.d || true
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do [ -f "$f" ] && sed -i -E 's/^deb (\[[^]]*\] *)?/deb [trusted=yes] /' "$f"; done || true
           for f in /etc/apt/sources.list.d/*.sources; do [ -f "$f" ] && sed -i '/^Trusted:/d; s/^Types:.*/&\nTrusted: yes/' "$f"; done || true
-          apt-get update
+          echo "=== SRC-BEFORE"; cat /etc/apt/sources.list.d/droidian.sources
+          sed -i '/^Signed-By:/d; /^Trusted:/d' /etc/apt/sources.list.d/*.sources
+          sed -i '/^Types:/a Trusted: yes' /etc/apt/sources.list.d/*.sources
+          echo "=== SRC-AFTER"; cat /etc/apt/sources.list.d/droidian.sources
+          apt-get update -o Acquire::Check-Valid-Until=false
+          echo "=== PKG"; apt-cache policy linux-packaging-snippets | head -6
           apt-get install -y linux-packaging-snippets
           cd /buildd/sources
           git config --global --add safe.directory /buildd/sources
