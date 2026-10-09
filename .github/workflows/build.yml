@@ -16,7 +16,7 @@ jobs:
         if: steps.tc-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/tc && cd ~/tc
-          wget -q https://android.googlesource.[STRIPPED 82 bytes].tar.gz -O clang.tar.gz
+          wget -q https://android.googlesource.[STRIPPED 84 bytes].tar.gz -O clang.tar.gz
           mkdir clang && tar -xzf clang.tar.gz -C clang && rm clang.tar.gz
           git clone --depth=1 https://android.googlesource.[STRIPPED 68 bytes].9 aarch64
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 arm32
@@ -33,6 +33,14 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           sed -i 's/prepare-compiler-check:/_prepare-compiler-check:/g' Makefile || true
           make O=out ARCH=arm64 vince_defconfig
+          echo "CONFIG_AUDIT=y" >> out/.config
+          echo "CONFIG_AUDIT_GENERIC=y" >> out/.config
+          echo "CONFIG_SECURITY=y" >> out/.config
+          echo "CONFIG_SECURITYFS=y" >> out/.config
+          echo "CONFIG_SECURITY_APPARMOR=y" >> out/.config
+          echo "CONFIG_SECURITY_APPARMOR_BOOTPARAM_VALUE=1" >> out/.config
+          echo "CONFIG_ANDROID_BINDERFS=y" >> out/.config
+          make O=out ARCH=arm64 olddefconfig
           make -j2 O=out ARCH=arm64 CC=clang
       - uses: actions/upload-artifact@v4
         with:
