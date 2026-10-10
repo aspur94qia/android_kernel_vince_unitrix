@@ -1,0 +1,53 @@
+name: adapt
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag release kernel (kosong = dk-* terbaru)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+jobs:
+  zip:
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Susun zip adaptation
+        run: |
+          set -ex
+          REPO=${{ github.repository }}
+          ROOT=$PWD
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list -R $REPO --limit 30 --json tagName --jq '[.[]|select(.tagName|startswith("dk-"))][0].tagName')
+          fi
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          mkdir -p in out
+          gh release download "$TAG" -R $REPO -p '*.deb' -p 'boot.img' -D in
+          ls -lh in
+          for f in in/*.deb; do echo "== $f"; dpkg-deb -f "$f" Package Depends Pre-Depends; done
+          git clone --depth 1 -b droidian https://github.com/droidian/package-sideload ps
+          test -d ps/skeleton
+          NAME="droidian-adaptation-xiaomi-vince-arm64_$(date +%Y%m%d)"
+          W=$ROOT/work
+          B=$W/system/var/cache/package-sideload/bundles/$NAME
+          mkdir -p $B/archives $B/apt-state $B/apt-overlay/sources.list.d $B/apt-overlay/preferences.d $B/apt-overlay/trusted.gpg.d
+          cp in/*.deb $B/archives/
+          for f in $B/archives/*.deb; do
+            echo "/var/cache/package-sideload/bundles/$NAME/archives/$(basename $f)" >> $B/packages
+          done
+          cat $B/packages
+          ln -s /var/cache/package-sideload $W/system/system-update
+          tar -C $W/system -cf $W/payload.tar ./
+          rm -rf $W/system
+          cp in/boot.img $W/boot.img
+          cp -a ps/skeleton/. $W/
+          (cd $W && zip -r -q $ROOT/out/$NAME.zip .)
+          unzip -l out/$NAME.zip
+          gh release upload "$TAG" out/$NAME.zip -R $REPO --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adaptation-zip
+          path: out/*.zip
