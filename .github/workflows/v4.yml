@@ -36,12 +36,26 @@ jobs:
           done
           setc CONFIG_ANDROID_PARANOID_NETWORK "# CONFIG_ANDROID_PARANOID_NETWORK is not set"
           tail -n 40 $D
+      - name: Pulihkan ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/ccache-d
+          key: ccache-vince-${{ github.run_id }}
+          restore-keys: ccache-vince-
       - name: Build paket kernel Droidian
         run: |
           cat > $RUNNER_TEMP/b.sh <<'SH'
           set -ex
           apt-get update || true
           apt-get install -y linux-packaging-snippets
+          apt-get install -y ccache
+          for n in aarch64-linux-android-gcc-4.9 aarch64-linux-android-gcc; do ln -sf /usr/bin/ccache /usr/local/bin/$n; done
+          ccache --set-config=cache_dir=/ccache
+          ccache --set-config=max_size=1G
+          ccache --set-config=sloppiness=time_macros
+          ccache --set-config=hash_dir=false
+          ccache --set-config=base_dir=/buildd/sources
+          trap 'ccache -s || true' EXIT
           cd /buildd/sources
           git config --global --add safe.directory /buildd/sources
           mkdir -p debian/source
@@ -50,6 +64,7 @@ jobs:
           echo "3.0 (native)" > debian/source/format
           printf '#!/usr/bin/make -f\n\ninclude /usr/share/linux-packaging-snippets/kernel-snippet.mk\n\n%%:\n\tdh $@\n' > debian/rules
           chmod +x debian/rules
+          printf '\nexport PATH := /usr/local/bin:$(PATH)\n' >> debian/rules
           echo "=== CONTOH BAWAAN"; cat debian/kernel-info.mk
           V=$(awk '/^VERSION/{a=$3}/^PATCHLEVEL/{b=$3}/^SUBLEVEL/{c=$3}END{print a"."b"."c}' Makefile)
           echo "kernel $V"
@@ -74,16 +89,22 @@ jobs:
           debian/rules debian/control
           RELENG_HOST_ARCH="arm64" releng-build-package
           SH
-          mkdir -p pkgs
-          docker run --rm -v $PWD/pkgs:/buildd -v $PWD:/buildd/sources -v $RUNNER_TEMP/b.sh:/b.sh $(cat $RUNNER_TEMP/img) bash /b.sh
+          mkdir -p pkgs $HOME/ccache-d
+          docker run --rm -v $PWD/pkgs:/buildd -v $PWD:/buildd/sources -v $HOME/ccache-d:/ccache -v $RUNNER_TEMP/b.sh:/b.sh $(cat $RUNNER_TEMP/img) bash /b.sh
       - name: Kumpulkan hasil
         if: always()
         run: |
-          sudo chown -R $USER pkgs . 2>/dev/null || true
+          sudo chown -R $USER pkgs . $HOME/ccache-d 2>/dev/null || true
           mkdir -p rel
           cp pkgs/*.deb rel/ 2>/dev/null || true
           find . -name boot.img -not -path './rel/*' -exec cp {} rel/ \; 2>/dev/null || true
           ls -lh rel
+      - name: Simpan ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/ccache-d
+          key: ccache-vince-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
