@@ -1,0 +1,79 @@
+name: halium-patch
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: "Cabang kernel sumber"
+        type: string
+        default: "stable-perf"
+      defconfig:
+        description: "Nama defconfig"
+        type: string
+        default: "vince-perf_defconfig"
+      cabang_baru:
+        description: "Cabang tujuan hasil perbaikan"
+        type: string
+        default: "halium-ut"
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.kernel_ref }}
+      - name: Ambil halium-boot
+        run: git clone --depth=1 https://github.com/Halium/halium-boot ../halium-boot
+      - name: Pasang alat
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev gcc-aarch64-linux-gnu
+      - name: Terapkan dan periksa
+        env:
+          DEF: ${{ inputs.defconfig }}
+          NEWB: ${{ inputs.cabang_baru }}
+        run: |
+          set +e
+          F=arch/arm64/configs/$DEF
+          echo "=====MULAI-RINGKASAN====="
+          if [ ! -f "$F" ]; then
+            echo "defconfig $F tidak ada"
+            echo "=====AKHIR-RINGKASAN====="
+            exit 0
+          fi
+          mk() { rm -rf out; make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=out "$DEF" > /dev/null 2>&1; }
+          status() { for o in "$@"; do v=$(grep -E "^(CONFIG_$o=|# CONFIG_$o is not set)" out/.config | head -1); echo "  ${v:-CONFIG_$o: (tidak muncul: opsinya tidak ada atau syaratnya belum terpenuhi)}"; done; }
+          KUNCI="ANDROID_BINDER_IPC ANDROID_BINDER_DEVICES ANDROID_BINDERFS ASHMEM ANDROID_BINDER_IPC_32BIT SECURITY SECURITY_APPARMOR SECURITY_SELINUX OVERLAY_FS F2FS_FS SQUASHFS PSI NAMESPACES USER_NS PID_NS IPC_NS UTS_NS NET_NS CGROUP_DEVICE VETH BRIDGE"
+          mk
+          echo "### KUNCI SEBELUM DIPERBAIKI"
+          status $KUNCI
+          cp "$F" /tmp/def.sebelum
+          bash ../halium-boot/check-kernel-config "$F" -w > /tmp/w.txt 2>&1
+          echo
+          echo "### PERUBAHAN DEFCONFIG"
+          echo "baris baru: $(diff /tmp/def.sebelum "$F" | grep -c '^>')"
+          diff /tmp/def.sebelum "$F" | grep '^>' | head -80 | cut -c1-120
+          mk
+          echo
+          echo "### KUNCI SESUDAH DIPERBAIKI"
+          status $KUNCI
+          echo
+          echo "### MASIH BERMASALAH DI .config (nama saja)"
+          bash ../halium-boot/check-kernel-config out/.config 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | grep -v -E "already set|^$|Checking config" | awk '{print $1}' | tr '\n' ' ' | fold -w 130
+          echo
+          echo
+          echo "### KIRIM KE CABANG $NEWB"
+          git config user.name "builder"
+          git config user.email "builder@example.com"
+          git checkout -q -b "$NEWB"
+          git add "$F"
+          if git diff --cached --quiet; then
+            echo "tidak ada perubahan untuk dikirim"
+          else
+            git commit -q -m "halium: terapkan opsi kernel Halium dan Ubuntu Touch (check-kernel-config -w)"
+            git push -f origin "HEAD:refs/heads/$NEWB" && echo "TERKIRIM ke cabang $NEWB"
+          fi
+          echo "=====AKHIR-RINGKASAN====="
+          exit 0
