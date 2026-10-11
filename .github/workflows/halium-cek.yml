@@ -1,0 +1,61 @@
+name: halium-cek
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: "Cabang kernel yang diperiksa"
+        type: string
+        default: "stable-perf"
+      defconfig:
+        description: "Nama defconfig"
+        type: string
+        default: "vince-perf_defconfig"
+permissions:
+  contents: read
+jobs:
+  cek:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.kernel_ref }}
+      - name: Ambil halium-boot
+        run: git clone --depth=1 https://github.com/Halium/halium-boot ../halium-boot
+      - name: Pasang alat
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev gcc-aarch64-linux-gnu
+      - name: Periksa konfigurasi kernel
+        env:
+          DEF: ${{ inputs.defconfig }}
+        run: |
+          set +e
+          echo "=====MULAI-RINGKASAN====="
+          echo "### VERSI KERNEL"
+          head -6 Makefile | grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL)'
+          echo
+          echo "### DEFCONFIG VINCE YANG ADA"
+          ls arch/arm64/configs | grep -i vince
+          echo
+          echo "### ISI halium-boot"
+          ls ../halium-boot | head -20
+          F=arch/arm64/configs/$DEF
+          if [ ! -f "$F" ]; then
+            echo "defconfig $F TIDAK ADA"
+            echo "=====AKHIR-RINGKASAN====="
+            exit 0
+          fi
+          echo
+          echo "### CEK DEFCONFIG MENTAH (cara dokumen UBports)"
+          bash ../halium-boot/check-kernel-config "$F" 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | head -90 | cut -c1-170
+          echo
+          echo "### CEK .config HASIL OLAHAN (lebih akurat)"
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=out "$DEF" > /dev/null 2>&1
+          if [ -f out/.config ]; then
+            bash ../halium-boot/check-kernel-config out/.config 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | head -90 | cut -c1-170
+          else
+            echo ".config gagal dibuat"
+          fi
+          echo "=====AKHIR-RINGKASAN====="
+          exit 0
